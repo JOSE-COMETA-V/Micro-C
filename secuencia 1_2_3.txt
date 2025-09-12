@@ -1,0 +1,128 @@
+; secuencia 1 y secuencia 2 y secuencia 3 
+#include <xc.inc>
+
+; Config bits
+CONFIG  FOSC = INTOSCIO_EC
+CONFIG  WDT  = OFF
+CONFIG  LVP  = OFF
+CONFIG  PBADEN = OFF
+
+; Reset
+PSECT  resetVec, class=CODE, reloc=2
+ORG     0x00
+GOTO    Main
+
+; Variables
+PSECT  udata
+Cont1:  DS 1
+Cont2:  DS 1
+Cont3:  DS 1
+
+; Definicion de codigo
+PSECT  main_code, class=CODE, reloc=2
+Main:
+    ; OSCCON ~8 MHz 
+    MOVLW   0b01110110
+    MOVWF   OSCCON
+
+    ; definimos a  
+    ;RB0:RB3 salidas
+    ; RB4:RB7 entradas
+    MOVLW   0xF0
+    MOVWF   TRISB
+    CLRF    LATB
+
+MainLoop:
+    BSF     LATB, 0         ; Enciende RB0
+    CALL    Delay_200ms
+    BCF     LATB, 0         ; Apaga RB0
+    CALL    Delay_200ms
+    GOTO    MainLoop
+    
+    
+      ;DEFINIMOS SECUENCIA 1 (alternancia de pares)
+      Secuencia1:
+      MOVLW   0x05          ; RB0 y RB2
+      MOVWF   LATB
+      CALL    Delay_200ms
+      MOVLW   0x0A          ; RB1 y RB3
+      MOVWF   LATB
+      CALL    Delay_200ms
+      RETURN
+      
+      
+      ;DEFINIMOS SECUENCIA 2 (un solo led a la vez)
+    Secuencia2:
+    MOVLW   0x01
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x02
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x04
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x08
+    MOVWF   LATB
+    CALL    Delay_200ms
+    RETURN
+
+      ;SECUENCIA 3 (todos los leds se prenden en secuencia)
+    Secuencia3:
+    MOVLW   0x01
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x03
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x07
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x0F
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x07
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x03
+    MOVWF   LATB
+    CALL    Delay_200ms
+    MOVLW   0x01
+    MOVWF   LATB
+    CALL    Delay_200ms
+    RETURN
+    
+    
+;parte del (PRIMER) codigo:     
+; Retardos
+Delay_200ms:
+    MOVLW   40
+    MOVWF   Cont1
+D200:
+    CALL    Delay_5ms
+    DECFSZ  Cont1, F
+    GOTO    D200
+    RETURN
+
+Delay_5ms:
+    MOVLW   250
+    MOVWF   Cont2
+D5:
+    CALL    Delay_20us
+    DECFSZ  Cont2, F
+    GOTO    D5
+    RETURN
+
+Delay_20us:
+    MOVLW   25
+    MOVWF   Cont3
+D20:
+    NOP
+    NOP
+    NOP
+    NOP
+    DECFSZ  Cont3, F
+    GOTO    D20
+    RETURN
+
+END

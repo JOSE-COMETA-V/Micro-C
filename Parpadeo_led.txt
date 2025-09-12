@@ -1,0 +1,53 @@
+#include <xc.inc>  
+
+  
+    CONFIG  FOSC = INTOSCIO_EC   ; oscilador interno a 8 MHz
+    CONFIG  PBADEN = OFF         ; pines de PORTB como digitales
+
+;variables
+contador_5s EQU 0x00
+contador_2s EQU 0x01
+ 
+ 
+    PSECT  resetVec, class=CODE, reloc=2  
+    ORG     0x0000                          ; Dirección de inicio
+    GOTO    Inicio                         
+
+ 
+    
+    PSECT  main_code, class=CODE, reloc=2  ; Sección de código principal
+
+Inicio:
+    CLRF    TRISB       ; PORTB como salida
+    CLRF    LATB        
+    OSCCON	0x76
+
+Loop:
+    CALL    Retardo_2s  
+    BTG     LATB, 0     
+    CALL    Retardo_5s  
+    GOTO    Loop        ; bucle infinito para el parpadeo
+
+ 
+
+Retardo_5s:
+    MOVLW   1.275          ; Carga el valor 25 en el registro W (contador externo)
+    MOVWF   contador_5s  ; Guarda el valor en la variable contador_5s
+    GOTO    Decrementador_5s
+    return
+Decrementador_5s
+    decfsz	contador,1
+    bra		Decrementador_5s
+    return	Loop              
+
+
+Retardo_2s:
+    MOVLW   .510          ; Cargar el valor 25 en el registro W (contador externo)
+    MOVWF   contador_2s  ; Guardar el valor en la variable contador_2s
+    GOTO    Decrementador_2s
+Decrementador_2s
+    decfsz	contador,1
+    bra 	Decrementador_2s
+    return	Loop
+
+END

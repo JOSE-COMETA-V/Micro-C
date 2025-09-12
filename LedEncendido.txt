@@ -1,0 +1,17 @@
+;Encender LED
+
+#include <xc.inc>
+
+;bits de configuración 
+CONFIG FOSC = INTOSCIO_EC  ; Oscilador interno
+CONFIG WDT = OFF	;Watchdog Timer deshabilitado
+CONFIG LVP = OFF	;Low voltage programming deshabilitado
+CONFIG PBADEN=OFF
+
+;empezamos con el main:
+main:	
+	CLRF	TRISB	;todos los pines como salida
+	MOVLW	0b00000001	;bit 0 en alto
+	MOVWF LATB     ;Mover configuración
+
+	END

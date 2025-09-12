@@ -1,0 +1,174 @@
+;Leds con secuencia pero sin botón
+
+#include <xc.inc>
+
+;bits de configuración 
+CONFIG FOSC = INTOSCIO_EC  ; Oscilador interno
+CONFIG WDT = OFF	;Watchdog Timer deshabilitado
+CONFIG LVP = OFF	;Low voltage programming deshabilitado
+CONFIG PBADEN=OFF       
+
+
+; Vector reset
+
+PSECT resetVec, class=CODE, reloc=2
+ORG	0x0000
+GOTO	Main
+
+;Variables en RAM
+
+PSECT udata_acs
+Secuencia:  DS  1  ;Variable para controlar la secuencia
+BotonAnt: DS 1 ;estado anterior del botón
+
+
+;Constantes
+BOTON_PIN EQU 0 ; Boton en RA0
+MAX_SECUENCIAS EQU 4 ;numero total de secuencias
+
+
+;Codigo principal
+
+PSECT main_code, class=CODE, reloc=2
+
+;activación y configuración de oscilador interno
+
+Main:
+	MOVLW 0x72 ;los bits 4,5,6 y 7 configurados para 8Mhz
+	MOVWF OSCCON
+;Configuración de PORTB como salida
+	CLRF TRISB    ;Pines de PORTB como salidas
+	CLRF LATB     ;Inicializar el puerto B en bajo
+	
+	;Configurar RA0 como entrada 
+	BSF TRISA, BOTON_PIN  ;RA0 como entrada
+	
+	;inicializar variables
+	CLRF Secuencia  ;Inicializar variable de (Secuencia)
+	CLRF BotonAnt
+MainLoop:
+;Verificar botón
+	CALL LeerBoton
+
+	;llamar Secuencia
+	CALL EjecutarSecuencia
+	
+	GOTO MainLoop
+
+LeerBoton:
+	;Leer estado del boton
+	BTFSC PORTA, BOTON_PIN
+	GOTO BotonNoPresionado
+
+	;Boton presionado
+	MOVF BotonAnt, W
+	BZ  BotonMantenido  
+
+	;cambiar secuencia
+	CALL CambiarSecuencia
+	MOVLW 0
+	MOVWF BotonAnt
+	RETURN
+
+BotonNoPresionado:
+
+	MOVLW   1
+	MOVWF	BotonAnt
+	RETURN
+
+BotonMantenido:
+	;no hace mucho
+	RETURN
+
+CambiarSecuencia:
+	;Incrementar Secuencia
+	INCF	Secuencia, F
+
+	;Verificar limite (0-3)
+	MOVLW MAX_SECUENCIAS
+	CPFSEQ Secuencia
+	RETURN
+	
+
+	;Reinicio
+	CLRF Secuencia
+	RETURN 
+
+
+ 	;Subrutinas de secuencias Leds (ACTUALES)
+EjecutarSecuencia:
+	;Aquí se coloca que secuencia se va a ver
+	MOVF Secuencia, W
+	BZ  Secuencia0   ;Primer secuencia
+	DECF   WREG, W
+ 	BZ  Secuencia1   ;Segunda secuencia
+	DECF   WREG, W
+ 	BZ Secuencia2   ;Tercer secuencia
+	GOTO Secuencia3   ;Cuarta secuencia y rebobina el ciclo
+Secuencia0:
+	;Los 4 Leds prendidos
+	MOVLW 0b00001111
+	MOVWF LATB
+	RETURN
+
+Secuencia1:
+	;recorrido de izquierda a derecha 
+	MOVLW 0b00000001
+ 	MOVWF LATB
+	CALL Delay
+	MOVLW 0b00000010
+ 	MOVWF LATB
+ 	CALL Delay
+	MOVLW 0b00000100
+ 	MOVWF LATB
+ 	CALL Delay
+	MOVLW 0b00001000
+ 	MOVWF LATB
+ 	CALL Delay
+	RETURN
+
+Secuencia2:
+	;Inverso del recorrido de la Secuencia1
+	MOVLW 0b00001000
+ 	MOVWF LATB
+ 	CALL Delay
+ 	MOVLW 0b00000100
+ 	MOVWF LATB
+ 	CALL Delay
+ 	MOVLW 0b00000010
+ 	MOVWF LATB
+ 	CALL Delay
+ 	MOVLW 0b00000001
+ 	MOVWF LATB
+ 	CALL Delay
+ 	RETURN
+
+Secuencia3:
+	;Alternancia de Leds (1 y 3) y después (2 y 4)
+	MOVLW  0b00000101
+	MOVWF LATB
+	CALL Delay
+	MOVLW  0b00001010
+ 	MOVWF LATB
+ 	CALL Delay
+	RETURN
+
+;Las subrutinas de retardo que hemos estado utilizando
+
+Delay:
+	MOVLW 255	;100 ciclos de 5ms
+	MOVWF 0x20
+Delay1:
+	MOVLW 255
+	MOVWF 0x21
+Delay2:
+	DECFSZ  0x21, F
+	GOTO Delay2
+	DECFSZ 0x20, F
+	GOTO Delay1
+ 	RETURN
+
+
+END ;FIN
+
+

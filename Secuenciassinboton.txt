@@ -1,0 +1,151 @@
+;Leds con secuencia pero sin botón
+
+#include <xc.inc>
+
+;bits de configuración 
+CONFIG FOSC = INTOSCIO_EC  ; Oscilador interno
+CONFIG WDT = OFF	;Watchdog Timer deshabilitado
+CONFIG LVP = OFF	;Low voltage programming deshabilitado
+CONFIG PBADEN=OFF       
+
+
+; Vector reset
+
+PSECT resetVec, class=CODE, reloc=2
+ORG	0x0000
+GOTO	Main
+
+;Variables en RAM
+
+PSECT udata_acs
+Contador1:  DS  1  ;Contador para retardo 
+Contador2:  DS  1  ;Contador para retardo
+Contador3:  DS  1  ;Contador para retardo
+Secuencia:  DS  1  ;Variable para controlar la secuencia
+
+;Codigo
+PSECT main_code, class=CODE, reloc=2
+;activación y configuración de oscilador interno
+Main:
+	MOVLW 0b01110101 ;los bits 4,5,6 y 7 configurados para 8Mhz
+	MOVWF OSCCON
+;Configuración de PORTB como salida
+	CLRF TRISB    ;Pines de PORTB como salidas
+	CLRF LATB     ;Inicializar el puerto B en bajo
+	CLRF Secuencia  ;Inicializar variable de (Secuencia)
+MainLoop:
+;Iniciar secuencias Led 
+	CALL  SecuenciasLEDS
+;Retardo de las secuencias
+	CALL Delay_500ms
+;Avanzar a la siguiente secuencia
+	INCF Secuencia, F
+
+;Vamos a tomar un tipo de contador  lo que va hacer es tomar el valor de 1 y cada secuencia va a sumar uno hasta llegar a 4 y cuando llegue a 4 este se va a reiniciar
+
+	MOVLW	4
+	CPFSEQ	Secuencia
+	GOTO	MainLoop
+	CLRF	Secuencia
+	GOTO	MainLoop
+
+;Subrutinas de secuencias Leds
+SecuenciaLEDs:
+	;Aquí se coloca que secuencia se va a ver
+	MOVF	Secuencia, W
+	BZ 	Secuencia0   ;Primer secuencia
+	DECF   WREG, W
+ 	BZ 	Secuencia1   ;Segunda secuencia
+	DECF   WREG, W
+ 	BZ	Secuencia2   ;Tercer secuencia
+	GOTO	Secuencia3   ;Cuarta secuencia y rebobina el ciclo
+Secuencia0:
+	;Los 4 Leds prendidos
+	MOVLW 0b00001111
+	MOVWF LATB
+	RETURN
+
+Secuencia1:
+	;recorrido de izquierda a derecha 
+	MOVLW 0b00000001
+ 	MOVWF LATB
+	CALL Delay_200ms
+	MOVLW 0b00000010
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+	MOVLW 0b00000100
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+	MOVLW 0b00001000
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+	RETURN
+
+Secuencia2:
+	;Inverso del recorrido de la Secuencia1
+	MOVLW 0b00001000
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+ 	MOVLW 0b00000100
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+ 	MOVLW 0b00000010
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+ 	MOVLW 0b00000001
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+ 	RETURN
+
+Secuencia3:
+	;Alternancia de Leds (1 y 3) y después (2 y 4)
+	MOVLW  0b00000101
+	MOVWF LATB
+	CALL Delay_200ms
+	MOVLW  0b00001010
+ 	MOVWF LATB
+ 	CALL Delay_200ms
+	RETURN
+
+;Las subrutinas de retardo que hemos estado utilizando
+
+Delay_500ms:
+	MOVLW 100	;100 ciclos de 5ms
+	MOVWF Contador1
+Delay_500ms_loop:
+	CALL Delay_5ms
+	DECFSZ Contador1, F
+	GOTO   Delay_500ms_loop
+	RETURN
+Delay_200ms:
+ 	MOVLW 40	;40 ciclos de 5ms
+ 	MOVWF Contador1
+Delay_200ms_loop:
+ 	CALL Delay_5ms
+ 	DECFSZ Contador1, F
+ 	GOTO   Delay_200ms_loop
+ 	RETURN
+Delay_5ms:
+ 	MOVLW 250	;250 ciclos de 20 Micro segundos
+ 	MOVWF Contador2
+Delay_500ms_loop:
+ 	CALL Delay_20us
+ 	DECFSZ Contador2, F
+ 	GOTO   Delay_5ms_loop
+ 	RETURN
+
+Delay_20us:
+ 	MOVLW 25	;25 ciclos
+ 	MOVWF Contador3
+Delay_20us_loop:
+ 	NOP ;1 Ciclo (0.5us)
+	NOP ;1 Ciclo (0.5us)
+	NOP ;1 Ciclo (0.5us)
+	NOP ;1 Ciclo (0.5us)
+	DECFSZ Contador3, F ;1 ciclo si no salta
+	GOTO Delay_20us_loop ;2 ciclos cuando salta
+;es decir van hacer 7*25=175 que es aproximado a 21us
+
+END ;FIN
+
+

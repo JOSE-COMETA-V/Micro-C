@@ -1,0 +1,17 @@
+    PROCESSOR 18F4550
+    #include <xc.inc>
+
+    PSECT   resetVect, class=CODE, reloc=2
+    ORG     0x00
+    goto    main
+
+    PSECT   code, class=CODE, reloc=2
+main:
+    clrf    PORTB
+    bcf     TRISB, 0
+    bsf     LATB, 0
+
+loop:
+    goto    loop
+
+    END

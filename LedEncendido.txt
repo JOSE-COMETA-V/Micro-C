@@ -4,15 +4,21 @@
 
 ;bits de configuración 
 CONFIG FOSC = INTOSCIO_EC  ; Oscilador interno
-CONFIG WDT = OFF	;Watchdog Timer deshabilitado
-CONFIG LVP = OFF	;Low voltage programming deshabilitado
+CONFIG WDT = OFF    ;Watchdog Timer deshabilitado
+CONFIG LVP = OFF    ;Low voltage programming deshabilitado
 CONFIG PBADEN=OFF
 
-;empezamos con el main:
-main:	
-	CLRF	TRISB	;todos los pines como salida
-	MOVLW	0b00000001	;bit 0 en alto
-	MOVWF LATB     ;Mover configuración
+; Vector reset
+PSECT resetVec, class=CODE, reloc=2
+  GOTO   main
 
-	END
+; Código principal
+PSECT main_code, class=CODE, reloc=2
+main:    
+    MOVLW  0     ; Carga el valor 0 (00000000 en binario) en el registro W
+    MOVWF  TRISB ;mueve ese valor de W al registro TRISB
+    MOVLW  1     ; Cargar el valor 1 (00000001 en binario) en el registro W
+    MOVWF  LATB  ;mueve el valor de w al registro LASTB
+
+    END
 ;fin

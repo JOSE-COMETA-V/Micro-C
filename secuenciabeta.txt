@@ -1,0 +1,88 @@
+    PROCESSOR 18F4550
+    #include <xc.inc>
+
+;-----------------------------------------
+; Variables en memoria (ACCESS)
+;-----------------------------------------
+    PSECT   udata_acs
+R0:     ds 1
+R1:     ds 1
+R2:     ds 1
+
+;-----------------------------------------
+; Vector de reset
+;-----------------------------------------
+    PSECT   resetVect, class=CODE, reloc=2
+    ORG     0x00
+    goto    main
+
+;-----------------------------------------
+; Programa principal
+;-----------------------------------------
+    PSECT   code, class=CODE, reloc=2
+main:
+    clrf    PORTB
+    movlw   0xF0          ; RB0..RB3 salidas
+    movwf   TRISB
+
+principal:
+    ; ---- Secuencia 1: correr LED ----
+    movlw   0x01
+    movwf   LATB
+s1_loop:
+    call    delay1s
+    rlcf    LATB, f
+    movf    LATB, W
+    andlw   0x0F
+    btfsc   STATUS, 2     ; Z=1 si LATB&0x0F = 0
+    goto    seq2
+    goto    s1_loop
+
+seq2:
+    ; ---- Secuencia 2: todos ON/OFF ----
+    movlw   3
+    movwf   R0
+s2_loop:
+    movlw   0x0F
+    movwf   LATB
+    call    delay1s
+    clrf    LATB
+    call    delay1s
+    decfsz  R0, f
+    goto    s2_loop
+
+seq3:
+    ; ---- Secuencia 3: conteo binario 0..15 ----
+    clrf    LATB
+    movlw   16
+    movwf   R0
+s3_loop:
+    call    delay1s
+    incf    LATB, f
+    decfsz  R0, f
+    goto    s3_loop
+
+    goto    principal     ; repetir todo
+
+;-----------------------------------------
+; Retardo aproximado 1 segundo @ 4 MHz
+;-----------------------------------------
+delay1s:
+    movlw   20
+    movwf   R2
+dly_outer:
+    movlw   0xFF
+    movwf   R1
+dly_mid:
+    movlw   0xFF
+    movwf   R0
+dly_inner:
+    decfsz  R0, f
+    bra     dly_inner
+    decfsz  R1, f
+    bra     dly_mid
+    decfsz  R2, f
+    bra     dly_outer
+    return
+
+    END

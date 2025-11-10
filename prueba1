@@ -1,0 +1,193 @@
+;=========================================================
+;  PIC18F4550 - 4 Secuencias con 4 LEDs (RB0..RB3)
+;  Cambio de secuencia con botón en RB4
+;  Ensamblador: MPLAB XC8 (pic-as)
+;=========================================================
+
+    #include <xc.inc>
+
+;---------------------------------------------------------
+; Bits de configuración
+;---------------------------------------------------------
+    CONFIG  FOSC = INTOSCIO_EC   ; Oscilador interno
+    CONFIG  WDT  = OFF
+    CONFIG  LVP  = OFF
+    CONFIG  PBADEN = OFF         ; PORTB digital al reset
+
+;---------------------------------------------------------
+; Vector de reset
+;---------------------------------------------------------
+    PSECT  resetVec, class=CODE, reloc=2
+    ORG     0x00
+    GOTO    Main
+
+;---------------------------------------------------------
+; Variables en RAM
+;---------------------------------------------------------
+    PSECT  udata
+Cont1:  DS 1
+Cont2:  DS 1
+Cont3:  DS 1
+
+;---------------------------------------------------------
+; Código principal
+;---------------------------------------------------------
+    PSECT  main_code, class=CODE, reloc=2
+
+Main:
+    ; OSCCON a ~8 MHz (IRCF=111, SCS=10)
+    MOVLW   0b01110110
+    MOVWF   OSCCON
+
+    ; RB0..RB3 salidas (LEDs), RB4 entrada (botón), RB5..RB7 entradas
+    MOVLW   0xF0
+    MOVWF   TRISB
+    CLRF    LATB
+
+MainLoop:
+
+;==================== SECUENCIA 1 ====================
+    MOVLW   0x01
+    CALL    ParpadeoDoble
+    CALL    CheckButton
+    MOVLW   0x02
+    CALL    ParpadeoDoble
+    CALL    CheckButton
+    MOVLW   0x04
+    CALL    ParpadeoDoble
+    CALL    CheckButton
+    MOVLW   0x08
+    CALL    ParpadeoDoble
+    CALL    CheckButton
+
+    CALL Delay_200ms
+    CALL Delay_200ms
+
+;==================== SECUENCIA 2 ====================
+    MOVLW   0x01
+    CALL    EncenderApagar
+    CALL    CheckButton
+    MOVLW   0x02
+    CALL    EncenderApagar
+    CALL    CheckButton
+    MOVLW   0x04
+    CALL    EncenderApagar
+    CALL    CheckButton
+    MOVLW   0x08
+    CALL    EncenderApagar
+    CALL    CheckButton
+    ; vuelta
+    MOVLW   0x04
+    CALL    EncenderApagar
+    CALL    CheckButton
+    MOVLW   0x02
+    CALL    EncenderApagar
+    CALL    CheckButton
+
+    CALL Delay_200ms
+    CALL Delay_200ms
+
+;==================== SECUENCIA 3 ====================
+    MOVLW   0x06
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    CALL    CheckButton
+
+    MOVLW   0x09
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    CALL    CheckButton
+
+    CALL Delay_200ms
+    CALL Delay_200ms
+
+;==================== SECUENCIA 4 ====================
+    MOVLW   0x0F
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    CALL    CheckButton
+
+    CALL Delay_200ms
+    CALL Delay_200ms
+;================== FIN SECUENCIA 4 ==================
+
+    GOTO    MainLoop
+
+;---------------------------------------------------------
+; Subrutinas de apoyo para las secuencias
+;---------------------------------------------------------
+ParpadeoDoble:
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    RETURN
+
+EncenderApagar:
+    MOVWF   LATB
+    CALL    Delay_200ms
+    CLRF    LATB
+    CALL    Delay_200ms
+    RETURN
+
+;---------------------------------------------------------
+; Subrutina: Chequeo de botón (RB4)
+;---------------------------------------------------------
+CheckButton:
+    BTFSC   PORTB, 4        ; ¿RB4 = 1?
+    GOTO    Siguiente       ; si sí ? saltar secuencia
+    RETURN
+
+Siguiente:
+    CLRF    LATB            ; apagar LEDs
+    CALL    Delay_200ms     ; anti-rebote
+    CALL    Delay_200ms
+    GOTO    MainLoop        ; continuar desde la siguiente secuencia
+
+;---------------------------------------------------------
+; Retardos
+;---------------------------------------------------------
+Delay_200ms:
+    MOVLW   40
+    MOVWF   Cont1
+D200_L:
+    CALL    Delay_5ms
+    DECFSZ  Cont1, F
+    GOTO    D200_L
+    RETURN
+
+Delay_5ms:
+    MOVLW   250
+    MOVWF   Cont2
+D5_L:
+    CALL    Delay_20us
+    DECFSZ  Cont2, F
+    GOTO    D5_L
+    RETURN
+
+Delay_20us:
+    MOVLW   25
+    MOVWF   Cont3
+D20_L:
+    NOP
+    NOP
+    NOP
+    NOP
+    DECFSZ  Cont3, F
+    GOTO    D20_L
+    RETURN
+
+;---------------------------------------------------------
+; Fin del programa
+;---------------------------------------------------------
+    END

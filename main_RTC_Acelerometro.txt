@@ -1,0 +1,67 @@
+#include <xc.h>
+#include <stdio.h>
+#include "Config.h"
+#include "LCD.h"
+#include "i2c.h"
+#include "ds1307.h"
+#include "mma8452q.h"
+
+// Variables globales
+char buf[17];
+int16_t xmg, ymg, zmg;
+unsigned char hora, minuto, segundo, dia, mes, anio;
+
+void Mostrar_RTC(void);
+void Mostrar_Acelerometro(void);
+
+void main(void) {
+    // Configuración base
+    OSCCONbits.IRCF = 0b111; // 8 MHz
+    OSCCONbits.SCS = 0b10;
+    ADCON1 = 0x0F;
+
+    LCD_Init();
+    LCD_Clear();
+    I2C_Master_Init(100000); // I2C 100 kHz
+
+    // Inicialización de módulos
+    DS1307_Init();
+    MMA8452Q_Init();
+
+    LCD_String_xy(0, 0, "Sistema Iniciado");
+    __delay_ms(1500);
+    LCD_Clear();
+
+    while (1) {
+        // Mostrar información del RTC (3 segundos)
+        Mostrar_RTC();
+        __delay_ms(3000);
+        LCD_Clear();
+
+        // Mostrar información del Acelerómetro (3 segundos)
+        Mostrar_Acelerometro();
+        __delay_ms(3000);
+        LCD_Clear();
+    }
+}
+
+void Mostrar_RTC(void) {
+    DS1307_GetTime(&hora, &minuto, &segundo);
+    DS1307_GetDate(&dia, &mes, &anio);
+
+    snprintf(buf, sizeof(buf), "%02u:%02u:%02u", hora, minuto, segundo);
+    LCD_String_xy(0, 4, buf);
+
+    snprintf(buf, sizeof(buf), "%02u/%02u/20%02u", dia, mes, anio);
+    LCD_String_xy(1, 3, buf);
+}
+
+void Mostrar_Acelerometro(void) {
+    MMA8452Q_Read_mg(&xmg, &ymg, &zmg);
+
+    snprintf(buf, sizeof(buf), "X:%5dmg", (int)xmg);
+    LCD_String_xy(0, 0, buf);
+
+    snprintf(buf, sizeof(buf), "Y:%4d Z:%4d", (int)ymg, (int)zmg);
+    LCD_String_xy(1, 0, buf);
+}

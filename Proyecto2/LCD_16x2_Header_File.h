@@ -3,19 +3,13 @@
 
 #include <xc.h>
 
-// ============================================
-// DEFINIR FRECUENCIA DEL OSCILADOR PARA DELAYS
-// ============================================
 #define _XTAL_FREQ 8000000UL  // 8MHz oscilador interno
 
-// ============================================
-// DEFINICIONES DE PINES LCD
-// ============================================
 #define RS LATDbits.LATD0
 #define EN LATDbits.LATD1
 #define ldata LATB
 
-// Prototipos de funciones
+
 void LCD_Init(void);
 void LCD_Command(char cmd);
 void LCD_Char(char data);
@@ -24,9 +18,6 @@ void LCD_String_xy(char row, char pos, const char *msg);
 void LCD_Clear(void);
 void MSdelay(unsigned int val);
 
-// ============================================
-// FUNCIÓN DE DELAY EN MILISEGUNDOS
-// ============================================
 void MSdelay(unsigned int val)
 {
     unsigned int i;
@@ -34,59 +25,47 @@ void MSdelay(unsigned int val)
         __delay_ms(1);
 }
 
-// ============================================
-// INICIALIZACIÓN DEL LCD
-// ============================================
 void LCD_Init(void)
 {
-    // Configurar puertos como salida
-    TRISB = 0x00;  // PORTB como salida (datos)
-    TRISD = 0x00;  // PORTD como salida (control)
+
+    TRISB = 0x00; 
+    TRISD = 0x00; 
     
-    MSdelay(20);   // Esperar Power-on (>15ms)
+    MSdelay(20);  
     
-    // Secuencia de inicialización del LCD
-    LCD_Command(0x38);   // Modo 8-bit, 2 líneas, 5x8 puntos
+    
+    LCD_Command(0x38);   
     MSdelay(5);
-    LCD_Command(0x38);   // Repetir comando
+    LCD_Command(0x38);   
     MSdelay(1);
-    LCD_Command(0x38);   // Repetir comando
+    LCD_Command(0x38);   
     
-    LCD_Command(0x0C);   // Display ON, Cursor OFF, Blink OFF
-    LCD_Command(0x06);   // Entry mode: incrementar, no shift
-    LCD_Command(0x01);   // Limpiar display
+    LCD_Command(0x0C);   
+    LCD_Command(0x06);   
+    LCD_Command(0x01);   
     MSdelay(2);
 }
 
-// ============================================
-// ENVIAR COMANDO AL LCD
-// ============================================
 void LCD_Command(char cmd)
 {
-    ldata = cmd;   // Poner comando en el bus de datos
-    RS = 0;        // RS=0 para comando
-    EN = 1;        // Pulso de enable
+    ldata = cmd;   
+    RS = 0;        
+    EN = 1;        
     __delay_us(1);
     EN = 0;
-    MSdelay(3);    // Esperar que el LCD procese el comando
+    MSdelay(3);    
 }
 
-// ============================================
-// ENVIAR CARÁCTER AL LCD
-// ============================================
 void LCD_Char(char data)
 {
-    ldata = data;  // Poner dato en el bus
-    RS = 1;        // RS=1 para datos
-    EN = 1;        // Pulso de enable
+    ldata = data;  
+    RS = 1;        
+    EN = 1;        
     __delay_us(1);
     EN = 0;
-    MSdelay(1);    // Tiempo de escritura
+    MSdelay(1);    
 }
 
-// ============================================
-// ENVIAR CADENA AL LCD
-// ============================================
 void LCD_String(const char *msg)
 {
     while(*msg != 0)
@@ -96,33 +75,28 @@ void LCD_String(const char *msg)
     }
 }
 
-// ============================================
-// POSICIONAR Y ESCRIBIR CADENA
-// ============================================
 void LCD_String_xy(char row, char pos, const char *msg)
 {
     char location = 0;
     
     if(row == 1)
     {
-        location = (char)(0x80 | (pos & 0x0F));  // Primera línea (0x80 - 0x8F)
+        location = (char)(0x80 | (pos & 0x0F));  
     }
     else if(row == 2)
     {
-        location = (char)(0xC0 | (pos & 0x0F));  // Segunda línea (0xC0 - 0xCF)
+        location = (char)(0xC0 | (pos & 0x0F));  
     }
     
     LCD_Command(location);
     LCD_String(msg);
 }
 
-// ============================================
-// LIMPIAR PANTALLA LCD
-// ============================================
 void LCD_Clear(void)
 {
-    LCD_Command(0x01);  // Comando clear display
-    MSdelay(2);         // Esperar que se complete
+    LCD_Command(0x01);  
+    MSdelay(2);         
 }
 
 #endif
+

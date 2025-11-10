@@ -1,0 +1,35 @@
+#include <xc.h>
+#include <stdio.h>
+#include "LCD.h"
+#include "Config.h"
+#include "i2c.h"
+#include "mma8452q.h"
+
+void main(void) {
+    char buf[17];
+    int16_t xmg, ymg, zmg;
+
+    // Configuración del oscilador interno y ADC en modo digital (el acelerómetro es digita).
+    OSCCONbits.IRCF = 0b111; // 8 MHz
+    OSCCONbits.SCS  = 0b10;
+    ADCON1 = 0x0F; //pines como digitales
+
+    LCD_Init();
+    LCD_Clear();
+    I2C_Master_Init(100000); // I2C a 100 kHz
+    LCD_String_xy(0, 0, "Init MMA8452Q");
+    MMA8452Q_Init();
+    LCD_Clear();
+
+    while (1) {
+        MMA8452Q_Read_mg(&xmg, &ymg, &zmg);
+
+        snprintf(buf, sizeof(buf), "X:%6dmg", (int)xmg);
+        LCD_String_xy(0, 0, buf);
+
+        snprintf(buf, sizeof(buf), "Y:%4d Z:%4d", (int)ymg, (int)zmg);
+        LCD_String_xy(1, 0, buf);
+
+        __delay_ms(200);
+    }
+}

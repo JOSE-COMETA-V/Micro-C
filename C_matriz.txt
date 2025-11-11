@@ -1,0 +1,64 @@
+#include <stdio.h>
+
+void sumar_matrices(int *matrizA, int *matrizB, int *resultado) {
+    resultado[0] = matrizA[0] + matrizB[0];
+    resultado[1] = matrizA[1] + matrizB[1];
+    resultado[2] = matrizA[2] + matrizB[2];
+    resultado[3] = matrizA[3] + matrizB[3];
+    resultado[4] = matrizA[4] + matrizB[4];
+    resultado[5] = matrizA[5] + matrizB[5];
+    resultado[6] = matrizA[6] + matrizB[6];
+    resultado[7] = matrizA[7] + matrizB[7];
+    resultado[8] = matrizA[8] + matrizB[8];
+}
+
+void multiplicar_matrices(int *matrizA, int *matrizB, int *resultado) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            int suma = 0;
+            for (int k = 0; k < 3; k++) {
+                suma += (*(matrizA + i*3 + k)) * (*(matrizB + k*3 + j));
+            }
+            *(resultado + i*3 + j) = suma;
+        }
+    }
+}
+
+void imprimir_matriz(int *matriz) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            printf("%d ", *(matriz + i*3 + j));
+        }
+        printf("\n");
+    }
+}
+
+int main() {
+    int matrizA[3][3], matrizB[3][3], resultado[3][3];
+    
+    printf("Ingrese los valores de la primera matriz 3x3:\n");
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            scanf("%d", &matrizA[i][j]);
+        }
+    }
+    
+    printf("Ingrese los valores de la segunda matriz 3x3:\n");
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            scanf("%d", &matrizB[i][j]);
+        }
+    }
+    
+    // Suma de matrices
+    sumar_matrices(&matrizA[0][0], &matrizB[0][0], &resultado[0][0]);
+    printf("Resultado de la suma:\n");
+    imprimir_matriz(&resultado[0][0]);
+    
+    // Multiplicación de matrices
+    multiplicar_matrices(&matrizA[0][0], &matrizB[0][0], &resultado[0][0]);
+    printf("Resultado de la multiplicación:\n");
+    imprimir_matriz(&resultado[0][0]);
+    
+    return 0;
+}

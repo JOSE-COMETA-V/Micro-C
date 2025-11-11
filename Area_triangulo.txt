@@ -1,0 +1,17 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+// calculadora de area en C
+void area_triangulo(float *base, float *altura, float *area) {
+    printf("ingrese base: ");
+    scanf("%f", base);
+    printf("ingrese la altura ");
+    scanf("%f", altura);
+    *area = (*base * *altura)/2;
+}
+int main (){
+     float base, altura, area;  
+    area_triangulo(&base, &altura, &area); 
+     printf("El area del triangulo es: %.2f\n", area);
+    return 0;
+}

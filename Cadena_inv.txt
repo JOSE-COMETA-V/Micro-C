@@ -1,0 +1,50 @@
+#include <stdio.h>
+#include <string.h>
+
+// Función para invertir una cadena usando punteros
+void invertir_cadena(char *cadena) {
+    int longitud, i;
+    char *ptr_inicio, *ptr_fin, temp;
+    
+ 
+    longitud = strlen(cadena);
+    
+
+    ptr_inicio = cadena;
+    ptr_fin = cadena;
+    
+
+    for (i = 0; i < longitud - 1; i++)
+        ptr_fin++;
+    
+
+    for (i = 0; i < longitud / 2; i++) {
+        // Intercambiar caracteres
+        temp = *ptr_fin;
+        *ptr_fin = *ptr_inicio;
+        *ptr_inicio = temp;
+        
+        // Mover punteros hacia el centro
+        ptr_inicio++;
+        ptr_fin--;
+    }
+}
+
+int main() {
+    char cadena[100];
+    
+    // Solicitar al usuario que ingrese una cadena
+    printf("Ingrese una cadena: ");
+    fgets(cadena, sizeof(cadena), stdin);
+    
+
+    cadena[strcspn(cadena, "\n")] = '\0';
+    
+    // Invertir la cadena
+    invertir_cadena(cadena);
+    
+    // Mostrar la cadena invertida
+    printf("Cadena invertida: %s\n", cadena);
+    
+    return 0;
+}

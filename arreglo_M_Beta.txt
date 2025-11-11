@@ -1,0 +1,39 @@
+#include <stdio.h>
+
+
+int buscar(int *arreglo, int longitud, int valor) {
+    // Recorremos cada posición del arreglo
+    for (int i = 0; i < longitud; i++)
+        // Accedemos al elemento en la posición i usando aritmética de punteros
+        if (*(arreglo + i) == valor) 
+            return i;
+    
+    return -1; 
+}
+
+int main() {
+    // Declaración e inicialización del arreglo predefinido
+    int arreglo[] = {10, 23, 45, 67, 89, 12, 34, 56, 78, 90};
+    
+    int longitud = sizeof(arreglo) / sizeof(arreglo[0]);
+    
+    printf("Arreglo: ");
+    for (int i = 0; i < longitud; i++) 
+        printf("%d ", arreglo[i]);
+    
+
+    int valor;
+    printf("\nValor a buscar: ");
+    scanf("%d", &valor);
+    
+
+    int pos = buscar(arreglo, longitud, valor);
+    
+
+    if (pos != -1)
+        printf("Encontrado en posición: %d\n", pos); 
+    else
+        printf("No encontrado\n"); 
+    
+    return 0; 
+}

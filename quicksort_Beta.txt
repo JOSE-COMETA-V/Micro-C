@@ -1,0 +1,77 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+// Función para intercambiar dos valores usando punteros
+void intercambiar(int *a, int *b) {
+    int t = *a;  // Guardar temporalmente el valor de a
+    *a = *b;     // Asignar el valor de b a a
+    *b = t;      // Asignar el valor temporal (original de a) a b
+}
+
+// Función principal de Quicksort izquierda a derecha
+void quicksort(int *arreglo, int izq, int der) {
+    if (izq < der) {
+        // Elegir el ultimo como pivote
+        int pivote = arreglo[der];
+        int i = izq - 1;
+        // Recorrer el subarreglo 
+        for (int j = izq; j < der; j++) {
+            if (arreglo[j] <= pivote) {
+                i++;  // Mover el índice
+                intercambiar(&arreglo[i], &arreglo[j]);  // Colocar elemento menor en su lugar
+            }
+        }
+        
+        // Colocar el pivote en su posición correcta
+        intercambiar(&arreglo[i + 1], &arreglo[der]);
+        
+        // La posición final del pivote
+        int p = i + 1;
+        
+        // Ordenar recursivamente el subarreglo izquierdo
+        quicksort(arreglo, izq, p - 1);
+        
+        // Ordenar recursivamente el subarreglo derecho
+        quicksort(arreglo, p + 1, der);
+    }
+}
+
+int main() {
+    int n;
+    
+    // Solicitar tamaño del arreglo
+    printf("Tamaño del arreglo: ");
+    scanf("%d", &n);
+    
+
+    int *arreglo = malloc(n * sizeof(int));
+    
+    // Verificar si la asignación de memoria fue exitosa
+    if (arreglo == NULL) {
+        printf("Error: No se pudo asignar memoria.\n");
+        return 1;
+    }
+    
+    // Leer elementos del arreglo
+    printf("Elementos: ");
+    for (int i = 0; i < n; i++)
+        scanf("%d", &arreglo[i]);
+    
+    // Mostrar arreglo original
+    printf("Original: ");
+    for (int i = 0; i < n; i++)
+        printf("%d ", arreglo[i]);
+    
+    // Ordenar el arreglo usando Quicksort
+    quicksort(arreglo, 0, n - 1);
+    
+    // Mostrar arreglo ordenado
+    printf("\nOrdenado: ");
+    for (int i = 0; i < n; i++)
+        printf("%d ", arreglo[i]);
+    
+    // Liberar memoria asignada
+    free(arreglo);
+    
+    return 0;
+}

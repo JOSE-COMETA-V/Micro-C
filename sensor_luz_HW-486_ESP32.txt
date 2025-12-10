@@ -1,0 +1,10 @@
+// -------- Sensor de Luz HW-486 --------
+#define LIGHT_PIN 35        // Pin analógico para AO del HW-486 
+
+// -------- Lectura del sensor de luz --------
+int lightRaw = analogRead(LIGHT_PIN);          // Lectura ADC 
+float lightVolt = lightRaw * (3.3 / 4095.0);    // Conversión a voltaje
+
+// Umbral para día/noche 
+bool isNight = (lightRaw > 2000);
+String mode = isNight ? "Noche" : "Día";

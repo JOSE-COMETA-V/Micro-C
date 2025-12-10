@@ -1,0 +1,174 @@
+#include <WiFi.h>           
+#include <WebServer.h>      
+
+// -------- CONFIGURACIÓN DE LA RED WiFi --------
+const char* ssid = "AndroidAP7CD8";       // // Nombre de la red WiFi
+
+const char* password = "1059238562Jd";    // Contraseña de la red WiFi
+
+// -------- MQ-135 --------
+#define MQ135_PIN 34        // Pin analógico del ESP32 donde está conectado el MQ-135 (D34)
+
+// -------- Sensor de Luz HW-486 --------
+#define LIGHT_PIN 35        // Pin analógico del ESP32 para la salida AO del HW-486 (D35)
+
+
+WebServer server(80);      
+
+// -------- Página HTML --------
+// Contenido de la página que se mostrará en el navegador (estructura y estilo)
+const char MAIN_page[] PROGMEM = R"====(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MQ-135 + Sensor de Luz</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    transition: background-color 0.5s, color 0.5s;
+    margin: 0;
+    padding: 0;
+  }
+  body.day {
+    background-color: #f2f2f2;
+    color: #000;
+  }
+  body.night {
+    background-color: #02071a;
+    color: #eee;
+  }
+  h2 { margin-top: 30px; }
+  .box { margin-top: 30px; font-size: 1.2rem; }
+</style>
+</head>
+<body class="day">
+<h2>Monitor MQ-135 y Sensor de Luz (HW-486)</h2>
+
+<div class="box">
+  <h3>🌫 Calidad del aire (MQ-135)</h3>
+  <p><b>Valor ADC:</b> <span id="raw">--</span></p>
+  <p><b>Voltaje:</b> <span id="volt">--</span> V</p>
+  <p><b>Estado:</b> <span id="state">--</span></p>
+</div>
+
+<div class="box">
+  <h3>💡 Sensor de Luz (HW-486)</h3>
+  <p><b>Valor ADC:</b> <span id="light-raw">--</span></p>
+  <p><b>Voltaje:</b> <span id="light-volt">--</span> V</p>
+  <p><b>Modo:</b> <span id="mode">--</span></p>
+</div>
+
+<script>
+// Función que pide los datos al ESP32 y actualiza la interfaz
+function update() {
+  fetch('/sensor')             // Llama a la ruta /sensor del servidor
+    .then(r => r.json())       // Convierte la respuesta a JSON
+    .then(data => {
+      // MQ-135
+      document.getElementById('raw').textContent = data.raw;
+      document.getElementById('volt').textContent = data.volt.toFixed(3);
+      document.getElementById('state').textContent = data.state;
+
+      // Luz
+      document.getElementById('light-raw').textContent = data.lightRaw;
+      document.getElementById('light-volt').textContent = data.lightVolt.toFixed(3);
+      document.getElementById('mode').textContent = data.mode;
+
+      // Cambiar tema día/noche según el valor enviado por el ESP32
+      if (data.isNight) {
+        document.body.className = 'night';
+      } else {
+        document.body.className = 'day';
+      }
+    })
+    .catch(err => console.log("Error /sensor:", err));
+}
+
+// Llama a update() cada segundo para refrescar los datos
+setInterval(update, 1000);
+update();
+</script>
+
+</body>
+</html>
+)====";
+
+// -------- Función para clasificar el aire --------
+// Recibe el valor ADC del MQ-135 y devuelve una etiqueta de calidad del aire
+String calidad(int raw) {
+  if (raw < 900) return "Excelente";   // Muy baja concentración de gases
+  if (raw < 1500) return "Buena";      // Aún en rango bueno
+  if (raw < 2200) return "Aceptable";  // Algo elevado
+  if (raw < 3000) return "Mala";       // Alta concentración
+  return "Muy mala";                   // Muy alta concentración
+}
+
+// -------- Ruta /sensor --------
+// Esta función se ejecuta cuando el navegador pide la URL
+// Se lee los sensores,  se arma un JSON y se envía como respuesta
+void handleSensor() {
+  // --- Lectura MQ-135 (calidad de aire) ---
+  int mqRaw = analogRead(MQ135_PIN);              // Lee el dato crudo del ADC 
+  float mqVolt = mqRaw * (3.3 / 4095.0);          // Convierte el valor ADC a voltaje real (3.3V de referencia)
+  String state = calidad(mqRaw);                  // Determina la calidad del aire en texto usando la función anterior
+
+  // --- Lectura sensor de Luz (HW-486) ---
+  int lightRaw = analogRead(LIGHT_PIN);           // Lee el valor analógico del sensor de luz
+  float lightVolt = lightRaw * (3.3 / 4095.0);    // Convierte ese valor a voltaje
+
+  // Define si es "día" o "noche" según el nivel de luz medido
+ 
+  bool isNight = (lightRaw > 2000);               // Umbral definido
+  String mode = isNight ? "Noche" : "Día";        // Modo en texto para mostrar en la página
+
+  // --- Construcción manual del JSON que se enviará al navegador ---
+  String json = "{";
+  json += "\"raw\":" + String(mqRaw) + ",";               // Valor ADC del MQ-135
+  json += "\"volt\":" + String(mqVolt, 3) + ",";          // Voltaje del MQ-135
+  json += "\"state\":\"" + state + "\",";                 // Estado de la calidad del aire
+  json += "\"lightRaw\":" + String(lightRaw) + ",";       // Valor ADC del sensor de luz
+  json += "\"lightVolt\":" + String(lightVolt, 3) + ",";  // Voltaje del sensor de luz
+  json += "\"isNight\":" + String(isNight ? 1 : 0) + ","; // 1 si es noche, 0 si es día
+  json += "\"mode\":\"" + mode + "\"";                    // Texto "Día" o "Noche"
+  json += "}";
+
+  // Envía la respuesta HTTP con código 200 y contenido JSON
+  server.send(200, "application/json", json);
+}
+
+// -------- Setup --------
+void setup() {
+  Serial.begin(115200);          
+  pinMode(MQ135_PIN, INPUT);     // Configura el pin del MQ-135 como entrada analógica
+  pinMode(LIGHT_PIN, INPUT);     // Configura el pin del sensor de luz como entrada analógica
+
+  // --- Conexión a la red WiFi ---
+  WiFi.begin(ssid, password);    
+  Serial.println("Conectando a WiFi...");
+  while (WiFi.status() != WL_CONNECTED) { 
+    delay(500);
+    Serial.print(".");           
+  }
+  Serial.println("\nConectado!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP()); 
+
+  // --- Rutas del servidor web ---
+  server.on("/", []() {
+    server.send_P(200, "text/html", MAIN_page);
+  });
+
+  // llama a handleSensor para devolver datos en JSON
+  server.on("/sensor", handleSensor);
+
+  
+  server.begin();
+  Serial.println("Servidor iniciado.");
+}
+
+// -------- Loop --------
+void loop() {
+  server.handleClient();
+}

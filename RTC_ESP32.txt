@@ -1,0 +1,35 @@
+#include <Wire.h>
+#include <RTClib.h>
+
+// RTC
+RTC_DS1307 rtc;
+
+// Función para formatear valores a dos dígitos (07, 09, 12…)
+String twoDigits(int v) {
+  return (v < 10 ? "0" : "") + String(v);
+}
+
+//Formato
+String getDateTimeString() {
+  DateTime now = rtc.now();
+  String s = "";
+  s += twoDigits(now.day());
+  s += "/";
+  s += twoDigits(now.month());
+  s += "/";
+  s += String(now.year());
+  s += " ";
+  s += twoDigits(now.hour());
+  s += ":";
+  s += twoDigits(now.minute());
+  s += ":";
+  s += twoDigits(now.second());
+  return s;
+}
+
+// Inicialización del RTC
+void initRTC() {
+  Wire.begin();    // Inicia comunicación I2C
+  rtc.begin();     // Inicializa el DS1307
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // *Se usa para ajustar adecuadamente la fecha y hora actuales *
+}

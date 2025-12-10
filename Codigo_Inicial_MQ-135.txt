@@ -1,0 +1,21 @@
+#define MQ135_PIN 34  // Pin analógico donde está conectado el sensor MQ-135
+
+void setup() {
+  Serial.begin(115200);   // Inicializa comunicación serial
+  delay(1000);            // Pequeña pausa para estabilizar
+  Serial.println("Iniciando lectura del MQ-135..."); // Mensaje inicial
+}
+
+void loop() {
+  // Leer valor del ADC
+  int raw = analogRead(MQ135_PIN);   // Lectura analógica 
+  float voltage = raw * (3.3 / 4095.0); // Conversión a voltaje en base a 3.3V
+
+  Serial.print("MQ135 Raw: ");  
+  Serial.print(raw);               // Muestra valor crudo del ADC
+  Serial.print("  | Voltaje: ");
+  Serial.print(voltage, 3);        // Muestra voltaje con 3 decimales
+  Serial.println(" V");
+
+  delay(1000);   // Espera 1 segundo antes de la siguiente lectura
+}

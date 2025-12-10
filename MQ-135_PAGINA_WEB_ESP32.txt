@@ -1,0 +1,110 @@
+#include <WiFi.h>          
+#include <WebServer.h>     
+
+// -------- CONFIGURACIÓN DE LA RED WiFi --------
+const char* ssid = "AndroidAP7CD8";       // Nombre de la red WiFi
+const char* password = "1059238562Jd";    // Contraseña de la red
+
+// -------- MQ-135 --------
+#define MQ135_PIN 34        // Pin analógico donde está conectado el MQ-135
+
+WebServer server(80);       // Servidor web escuchando en el puerto 80
+
+// -------- Página HTML --------
+const char MAIN_page[] PROGMEM = R"====(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MQ-135 - Calidad del Aire</title>
+<style>
+body { font-family: Arial; text-align:center; background:#f2f2f2; }
+h2 { margin-top:40px; }
+.box { margin-top:40px; font-size:1.4rem; }
+</style>
+</head>
+<body>
+<h2>Monitor MQ-135 - Calidad del Aire</h2>
+
+<div class="box">
+    <p><b>Valor ADC:</b> <span id="raw">--</span></p>
+    <p><b>Voltaje:</b> <span id="volt">--</span> V</p>
+    <p><b>Estado:</b> <span id="state">--</span></p>
+</div>
+
+<script>
+// Función que consulta los datos del sensor cada 1 segundo
+function update() {
+    fetch('/sensor')           // Pide JSON al servidor
+    .then(r => r.json())       // Convierte respuesta a JSON
+    .then(data => {
+        // Actualiza valores en la página
+        document.getElementById('raw').textContent = data.raw;
+        document.getElementById('volt').textContent = data.volt.toFixed(3);
+        document.getElementById('state').textContent = data.state;
+    });
+}
+setInterval(update, 1000);     // Ejecuta cada 1 segundo
+update();                      // Llamada inicial
+</script>
+
+</body>
+</html>
+)====";
+
+// -------- Función para clasificar el aire --------
+String calidad(int raw) {
+  if (raw < 900) return "Excelente";   // Muy bajo nivel de gases
+  if (raw < 1500) return "Buena";      // Aún dentro de rango bueno
+  if (raw < 2200) return "Aceptable";  // Algo elevado
+  if (raw < 3000) return "Mala";       // Alta concentración
+  return "Muy mala";                   // Valores muy altos
+}
+
+// -------- Ruta del sensor --------
+void handleSensor() {
+  int raw = analogRead(MQ135_PIN);                // Lectura ADC 
+  float volt = raw * (3.3 / 4095.0);              // Convierte a voltaje
+  String state = calidad(raw);                    // Evalúa calidad del aire
+
+  // Construcción del JSON que se enviará al navegador
+  String json = "{";
+  json += "\"raw\":" + String(raw) + ",";
+  json += "\"volt\":" + String(volt, 3) + ",";
+  json += "\"state\":\"" + state + "\"";
+  json += "}";
+
+  server.send(200, "application/json", json);     // Respuesta al navegador
+}
+
+// -------- Setup --------
+void setup() {
+  Serial.begin(115200);                // Inicio del monitor serial
+  pinMode(MQ135_PIN, INPUT);           // Configura el pin como entrada
+
+  WiFi.begin(ssid, password);          // Conexión a la red WiFi
+  Serial.println("Conectando a WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");                 // Espera mientras conecta
+  }
+  Serial.println("\nConectado!");
+  Serial.print("IP: ");                // Muestra la IP del servidor
+  Serial.println(WiFi.localIP());
+
+  // Ruta para mostrar la página HTML
+  server.on("/", []() {
+    server.send_P(200, "text/html", MAIN_page);
+  });
+
+  // Ruta que entrega los datos del sensor en JSON
+  server.on("/sensor", handleSensor);
+
+  server.begin();                      // Inicia el servidor
+  Serial.println("Servidor iniciado.");
+}
+
+// -------- Loop --------
+void loop() {
+  server.handleClient();              
+}

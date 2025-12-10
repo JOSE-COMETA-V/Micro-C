@@ -1,0 +1,216 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Wire.h>
+#include <RTClib.h>
+
+// -------- CONFIGURACIÓN DE LA RED WiFi --------
+const char* ssid = "AndroidAP7CD8";         //Nombre de la red WiFi
+
+const char* password = "1059238562Jd";      //Contraseña de la red WiFi
+
+
+// -------- MQ-135 --------
+#define MQ135_PIN 34        // Entrada analógica para el sensor de calidad de aire MQ-135
+
+// -------- Sensor de Luz HW-486 --------
+#define LIGHT_PIN 35        // Entrada analógica para la salida AO del sensor de luz HW-486
+
+// -------- RTC DS1307 --------
+RTC_DS1307 rtc;             // Objeto para manejar el reloj de tiempo real DS1307
+
+
+WebServer server(80);
+
+// -------- Página HTML --------
+const char MAIN_page[] PROGMEM = R"====(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MQ-135, Luz (HW-486) y RTC DS1307</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    transition: background-color 0.5s, color 0.5s;
+    margin: 0;
+    padding: 0;
+  }
+  body.day {
+    background-color: #f2f2f2;
+    color: #000;
+  }
+  body.night {
+    background-color: #02071a;
+    color: #eee;
+  }
+  h2 { margin-top: 30px; }
+  .box { margin-top: 30px; font-size: 1.2rem; }
+</style>
+</head>
+<body class="day">
+<h2>Monitor MQ-135, Sensor de Luz (HW-486) y RTC DS1307</h2>
+
+<div class="box">
+  <h3>🌫 Calidad del aire (MQ-135)</h3>
+  <p><b>Valor ADC:</b> <span id="raw">--</span></p>
+  <p><b>Voltaje:</b> <span id="volt">--</span> V</p>
+  <p><b>Estado:</b> <span id="state">--</span></p>
+</div>
+
+<div class="box">
+  <h3>💡 Sensor de Luz (HW-486)</h3>
+  <p><b>Valor ADC:</b> <span id="light-raw">--</span></p>
+  <p><b>Voltaje:</b> <span id="light-volt">--</span> V</p>
+  <p><b>Modo:</b> <span id="mode">--</span></p>
+</div>
+
+<div class="box">
+  <h3>🕒 Fecha y Hora (RTC DS1307)</h3>
+  <p><span id="datetime">--/--/---- --:--:--</span></p>
+</div>
+
+<script>
+function update() {
+  fetch('/sensor')
+    .then(r => r.json())
+    .then(data => {
+      // MQ-135
+      document.getElementById('raw').textContent = data.raw;
+      document.getElementById('volt').textContent = data.volt.toFixed(3);
+      document.getElementById('state').textContent = data.state;
+
+      // Luz
+      document.getElementById('light-raw').textContent = data.lightRaw;
+      document.getElementById('light-volt').textContent = data.lightVolt.toFixed(3);
+      document.getElementById('mode').textContent = data.mode;
+
+      // Día / noche
+      if (data.isNight) {
+        document.body.className = 'night';
+      } else {
+        document.body.className = 'day';
+      }
+
+      // Fecha y hora
+      document.getElementById('datetime').textContent = data.datetime;
+    })
+    .catch(err => console.log("Error /sensor:", err));
+}
+
+setInterval(update, 1000);
+update();
+</script>
+
+</body>
+</html>
+)====";
+
+// -------- Funciones auxiliares --------
+
+// Clasificación de la calidad del aire según el valor ADC del MQ-135
+String calidad(int raw) {
+  if (raw < 900) return "Excelente";
+  if (raw < 1500) return "Buena";
+  if (raw < 2200) return "Aceptable";
+  if (raw < 3000) return "Mala";
+  return "Muy mala";
+}
+
+// Formato de números a dos dígitos para mostrar fecha y hora
+String twoDigits(int v) {
+  if (v < 10) return "0" + String(v);
+  return String(v);
+}
+
+// Obtención de la fecha y hora actuales desde el RTC en formato legible
+String getDateTimeString() {
+  DateTime now = rtc.now();    // Lectura de fecha y hora del módulo DS1307
+  String s = "";
+  s += twoDigits(now.day());
+  s += "/";
+  s += twoDigits(now.month());
+  s += "/";
+  s += String(now.year());
+  s += " ";
+  s += twoDigits(now.hour());
+  s += ":";
+  s += twoDigits(now.minute());
+  s += ":";
+  s += twoDigits(now.second());
+  return s;
+}
+
+// -------- Ruta /sensor --------
+// Lectura de sensores y envío de datos en formato JSON
+void handleSensor() {
+  // MQ-135
+  int mqRaw = analogRead(MQ135_PIN);            // Lectura analógica del MQ-135
+  float mqVolt = mqRaw * (3.3 / 4095.0);        // Conversión del valor ADC a voltaje
+  String state = calidad(mqRaw);                // Determinación del estado de la calidad del aire
+
+  // Luz (HW-486)
+  int lightRaw = analogRead(LIGHT_PIN);         // Lectura analógica del sensor de luz
+  float lightVolt = lightRaw * (3.3 / 4095.0);  // Conversión del valor ADC a voltaje
+
+  // Determinación de día o noche según el nivel de luz medido
+  bool isNight = (lightRaw > 2000);             // Umbral definido
+  String mode = isNight ? "Noche" : "Día";      // Modo en texto para mostrar en la página
+
+  // Fecha y hora desde el RTC
+  String datetime = getDateTimeString();        // Cadena con fecha y hora actuales
+
+  // JSON
+  String json = "{";
+  json += "\"raw\":" + String(mqRaw) + ",";
+  json += "\"volt\":" + String(mqVolt, 3) + ",";
+  json += "\"state\":\"" + state + "\",";
+  json += "\"lightRaw\":" + String(lightRaw) + ",";
+  json += "\"lightVolt\":" + String(lightVolt, 3) + ",";
+  json += "\"isNight\":" + String(isNight ? 1 : 0) + ",";
+  json += "\"mode\":\"" + mode + "\",";
+  json += "\"datetime\":\"" + datetime + "\"";
+  json += "}";
+  
+  server.send(200, "application/json", json);
+}
+
+// -------- Setup --------
+void setup() {
+  Serial.begin(115200);
+  pinMode(MQ135_PIN, INPUT);     // Configuración del pin del MQ-135 como entrada analógica
+  pinMode(LIGHT_PIN, INPUT);     // Configuración del pin del sensor de luz como entrada analógica
+
+  // Iniciar I2C y RTC para disponer de fecha y hora en el sistema
+  Wire.begin();                  // Inicio de comunicación I2C
+  if (!rtc.begin()) {
+    Serial.println("ERROR: No se encuentra el RTC DS1307.");
+  } else {
+    Serial.println("RTC DS1307 encontrado.");
+    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Ajuste inicial de fecha y hora 
+  }
+
+  WiFi.begin(ssid, password);
+  Serial.println("Conectando a WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConectado!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", []() {
+    server.send_P(200, "text/html", MAIN_page);
+  });
+
+  server.on("/sensor", handleSensor);
+
+  server.begin();
+  Serial.println("Servidor iniciado.");
+}
+
+// -------- Loop --------
+void loop() {
+  server.handleClient();
+}

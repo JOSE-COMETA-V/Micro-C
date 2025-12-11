@@ -1,0 +1,31 @@
+// -------- MQ-135 --------
+#define MQ135_PIN 34                 // Entrada analógica para el sensor de calidad de aire MQ-135
+
+float mqPPM = 0;                     // Valor aproximado de concentración en ppm
+String mqState = "";                 // Estado textual de la calidad del aire
+unsigned long mqStartTime = 0;      // Marca de tiempo para el periodo de calentamiento
+
+// Conversión de la lectura ADC a ppm y clasificación del aire
+void updateMQ135() {
+  int raw = analogRead(MQ135_PIN);   // Lectura analógica cruda del MQ-135 (0–4095)
+
+  Serial.print("MQ135 raw = ");
+  Serial.println(raw);               // Registro de la lectura para supervisión
+
+  // Periodo de calentamiento del sensor (60 segundos desde el arranque)
+  if (millis() - mqStartTime < 60000) {
+    mqPPM   = 0;                     // No se consideran válidos los ppm durante calentamiento
+    mqState = "Calentando";          // Estado informativo mientras el sensor se estabiliza
+    return;
+  }
+
+  // Aproximación de ppm mediante una regla de tres
+  mqPPM = (raw / 4095.0) * 1600.0;
+
+  // Clasificación de la calidad del aire según el valor aproximado en ppm
+  if      (mqPPM <= 350)  mqState = "Alta";
+  else if (mqPPM <= 500)  mqState = "Buena";
+  else if (mqPPM <= 800)  mqState = "Moderada";
+  else if (mqPPM <= 1200) mqState = "Baja";
+  else                    mqState = "Mala";
+}

@@ -1,0 +1,93 @@
+#include <Wire.h>        
+#include <U8g2lib.h>     
+#include <RTClib.h>      
+
+// ---------------- OLED SH1106 ----------------
+// Inicialización de la pantalla OLED SH1106 de 128x64 por I2C 
+U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
+
+// ---------------- MQ135 ----------------
+#define MQ135_PIN 34      // Entrada analógica para el sensor de calidad de aire MQ-135
+
+// ---------------- Sensor de luz HW-486 ----------------
+#define LIGHT_PIN 35      // Entrada analógica para la salida AO del sensor de luz HW-486
+
+// ---------------- RTC DS1307 ----------------
+RTC_DS1307 rtc;           // Objeto para manejar el reloj del DS1307
+
+
+// ---------------- Función para evaluar calidad del aire ----------------
+// Clasificación aproximada de la calidad del aire a partir del voltaje del MQ-135
+String estadoAire(float volt) {
+  if (volt < 0.4) return "Excelente";
+  if (volt < 1.0) return "Buena";
+  if (volt < 2.0) return "Regular";
+  return "Mala";
+}
+
+// ---------------- SETUP ----------------
+void setup() {
+  Serial.begin(115200);       // Inicialización del puerto serie para monitoreo
+
+  // Inicialización de la pantalla OLED
+  display.begin();            // Inicio de la comunicación con la OLED
+  display.clearBuffer();      // Limpieza del buffer interno de la pantalla
+
+  // Inicialización del RTC DS1307
+  if (!rtc.begin()) {         // Verificación de comunicación con el RTC
+    Serial.println("No se detecta el RTC!");
+  }
+
+  if (!rtc.isrunning()) {    
+    Serial.println("RTC detenido, ajustando...");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Ajuste de fecha y hora al momento de compilación
+  }
+
+  // Configuración de entradas analógicas para los sensores
+  pinMode(MQ135_PIN, INPUT);  // MQ-135 como entrada
+  pinMode(LIGHT_PIN, INPUT);  // Sensor de luz como entrada
+}
+
+
+// ---------------- LOOP ----------------
+void loop() {
+
+  // -------- MQ135 --------
+  int rawAir = analogRead(MQ135_PIN);                 // Lectura analógica del MQ-135
+  float voltAir = rawAir * (3.3 / 4095.0);            // Conversión del valor ADC a voltaje
+  String calidad = estadoAire(voltAir);               // Evaluación de la calidad del aire según el voltaje
+
+  // -------- LUZ --------
+  int rawLuz = analogRead(LIGHT_PIN);                 // Lectura analógica del sensor de luz
+  float voltLuz = rawLuz * (3.3 / 4095.0);            // Conversión del valor ADC a voltaje
+  String modo = (voltLuz > 1.5) ? "Noche" : "Dia";    // Determinación de modo Día/Noche según nivel de luz
+
+  // -------- RTC --------
+  DateTime now = rtc.now();                           // Lectura de fecha y hora actual del RTC
+  char fecha[20];
+  char hora[20];
+  sprintf(fecha, "%02d/%02d/%04d", now.day(), now.month(), now.year());   // Formato de fecha DD/MM/AAAA
+  sprintf(hora,  "%02d:%02d:%02d", now.hour(), now.minute(), now.second()); // Formato de hora HH:MM:SS
+
+  // -------- Mostrar en OLED --------
+  display.clearBuffer();                              // Limpieza del contenido 
+  display.setFont(u8g2_font_6x12_tr);                 // Selección de fuente para el texto
+
+  // Línea de calidad de aire
+  display.drawStr(0, 10, ("Aire: " + calidad).c_str());  // Muestra el estado del aire
+
+  // Línea de voltaje del MQ-135
+  String voltA = "V: " + String(voltAir, 2);          // Construcción de cadena con el voltaje del MQ-135
+  display.drawStr(90, 10, voltA.c_str());             // Visualización del voltaje en la parte derecha
+
+  // Línea de estado de luz
+  display.drawStr(0, 25, ("Luz: " + modo).c_str());   // Muestra si está en modo Día o Noche
+
+  // Líneas de fecha y hora
+  display.drawStr(0, 40, ("Fecha: " + String(fecha)).c_str()); // Muestra la fecha actual
+  display.drawStr(0, 55, ("Hora:  " + String(hora)).c_str());  // Muestra la hora actual
+
+  display.sendBuffer();                               // Envía el buffer a la pantalla para actualizar la imagen
+
+  delay(1000);                                        // Intervalo de actualización de 1 segundo
+}

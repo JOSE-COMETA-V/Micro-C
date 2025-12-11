@@ -1,0 +1,948 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+#include <DHT.h>
+#include <Wire.h>
+#include <RTClib.h>
+
+#include <U8g2lib.h>
+
+// ===================== CONFIG WiFi =====================
+const char* ssid     = "AndroidAP7CD8";
+const char* password = "1059238562Jd";
+
+// ===================== PINES ===========================
+#define DHTPIN     27
+#define DHTTYPE    DHT11
+
+#define MQ135_PIN  34      // MQ-135 en GPIO34 (entrada analógica)
+#define LDR_PIN    35      // HW-486 en GPIO35 (entrada analógica)
+
+// ===================== OBJETOS =========================
+DHT dht(DHTPIN, DHTTYPE);
+WebServer server(80);
+RTC_DS1307 rtc;
+
+// OLED SH1106 128x64 
+U8G2_SH1106_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
+
+// ===================== CONTROL GENERAL =================
+bool systemPaused = false;
+
+struct SensorData {
+  float temp;
+  float hum;
+  float mqPPM;
+  String mqState;
+
+  int   lightRaw;
+  float lightVolt;
+  String lightMode;   // "Día" / "Noche"
+  bool  isNight;
+
+  String datetime;    // "dd/mm/yyyy hh:mm:ss"
+};
+
+SensorData lastData;                                   // Últimos datos disponibles para mostrar/enviar
+unsigned long lastSensorMillis = 0;                    // Marca de tiempo de la última lectura de sensores
+unsigned long lastOledMillis   = 0;                    // Marca de tiempo de la última actualización de OLED
+const unsigned long SENSOR_INTERVAL_MS = 1000;         // Intervalo de lectura de sensores (1 s)
+const unsigned long OLED_INTERVAL_MS   = 500;          // Intervalo de refresco de la OLED (0.5 s)
+
+// ===================== CONSTANTES MQ-135 =================
+// Rango aproximado 0–1500 ppm usado para mapear la lectura ADC
+const float MQ_PPM_MIN = 0.0;
+const float MQ_PPM_MAX = 1500.0;
+
+//Classificacion
+String classifyAirQuality(float ppm) {
+  if (ppm <= 350.0)   return "Alta";
+  if (ppm <= 500.0)   return "Buena";
+  if (ppm <= 800.0)   return "Moderada";
+  if (ppm <= 1200.0)  return "Baja";
+  return "Mala";
+}
+
+// ===================== HTML =============================
+const char MAIN_page[] PROGMEM = R"====(
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Estación Ambiental ESP32</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --night-bg: radial-gradient(circle at top, #151b30 0, #050814 55%, #02030a 100%);
+    --night-card: #101528;
+    --night-card-soft: #151b30;
+    --night-text-main: #f3f4ff;
+    --night-text-soft: #b2b7d9;
+    --night-title: #e0f2ff;
+    --night-accent: #00d1ff;
+    --night-accent-soft: rgba(0,209,255,0.15);
+
+    --day-bg: linear-gradient(135deg, #e8f2ff 0%, #f7fbff 40%, #ffffff 100%);
+    --day-card: #ffffff;
+    --day-card-soft: #f3f5fb;
+    --day-text-main: #111827;
+    --day-text-soft: #6b7280;
+    --day-title: #1d4ed8;
+    --day-accent: #2563eb;
+    --day-accent-soft: rgba(37,99,235,0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    padding: 16px;
+    transition: background 0.5s ease, color 0.4s ease, filter 0.3s ease;
+  }
+
+  body {
+    background: var(--night-bg);
+    color: var(--night-text-main);
+  }
+
+  body.paused {
+    filter: grayscale(0.2) brightness(0.9);
+  }
+
+  .dashboard {
+    width: 100%;
+    max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: linear-gradient(120deg, rgba(0,209,255,0.16), transparent);
+    border-radius: 16px;
+    border: 1px solid rgba(0,209,255,0.35);
+    backdrop-filter: blur(8px);
+    color: var(--night-text-main);
+  }
+
+  .header-left h1 {
+    font-size: 1.4rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .header-left span {
+    font-size: 0.9rem;
+    color: var(--night-text-soft);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .system-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: #ef4444;
+    color: #fff;
+    box-shadow: 0 6px 14px rgba(239,68,68,0.4);
+    transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  }
+
+  .system-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px rgba(239,68,68,0.5);
+  }
+
+  .system-btn.paused {
+    background: #22c55e;
+    box-shadow: 0 6px 14px rgba(34,197,94,0.4);
+  }
+
+  .system-btn.paused:hover {
+    box-shadow: 0 8px 16px rgba(34,197,94,0.5);
+  }
+
+  .header-status {
+    font-size: 0.85rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 2fr);
+    grid-template-rows: auto auto;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--night-card);
+    border-radius: 18px;
+    padding: 18px 20px;
+    border: 1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at top left, rgba(0,209,255,0.16), transparent 55%);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .card-content { position: relative; z-index: 1; }
+
+  .card-title {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--night-title);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .card-subtitle {
+    font-size: 0.75rem;
+    color: var(--night-text-soft);
+    margin-bottom: 12px;
+  }
+
+  .split {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .metric-main { font-size: 2.2rem; font-weight: 600; }
+  .metric-unit { font-size: 1rem; color: var(--night-text-soft); margin-left: 4px; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    background: var(--night-card-soft);
+    color: var(--night-text-soft);
+  }
+
+  .pill-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #00e676;
+  }
+
+  .pill.good .pill-dot { background: #00e676; }
+  .pill.moderate .pill-dot { background: #ffb347; }
+  .pill.bad .pill-dot { background: #ff4b5c; }
+
+  .mini-label {
+    font-size: 0.8rem;
+    color: var(--night-text-soft);
+    margin-bottom: 4px;
+  }
+
+  .bar-group {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+  }
+
+  .bar { flex: 1; }
+
+  .bar-visual {
+    position: relative;
+    height: 130px;
+    border-radius: 999px;
+    background: linear-gradient(to top, #091019, #10182a);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .bar-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    border-radius: inherit;
+    background: linear-gradient(to top, #00d1ff, #00ffa2);
+    height: 0%;
+    transition: height 0.5s ease-out;
+  }
+
+  .bar-legend {
+    margin-top: 6px;
+    font-size: 0.82rem;
+    display: flex;
+    justify-content: space-between;
+    color: var(--night-text-soft);
+  }
+
+  .bar-legend span { white-space: nowrap; }
+
+  .summary-list {
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: var(--night-text-soft);
+  }
+
+  .summary-list span {
+    color: var(--night-text-main);
+    font-weight: 500;
+  }
+
+  #air-chart {
+    width: 100%;
+    height: 120px;
+    border-radius: 12px;
+    background: radial-gradient(circle at top, rgba(0,209,255,0.12), transparent 65%);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    background: var(--night-accent-soft);
+    color: var(--night-accent);
+  }
+
+  .mode-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--night-accent);
+  }
+
+  .level-bar {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    border-radius: 999px;
+    background: #111624;
+    overflow: hidden;
+    margin-top: 16px;
+  }
+
+  .level-fill {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    transform: scaleX(0);
+    background: linear-gradient(to right, #00d1ff, #00ffa2);
+    transition: transform 0.4s ease-out;
+  }
+
+  .time-main {
+    font-size: 1.8rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+    color: var(--night-text-main);
+  }
+
+  .time-date {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--night-text-main);
+  }
+
+  @media (max-width: 800px) {
+    .grid {
+      grid-template-columns: minmax(0,1fr);
+      grid-template-rows: auto;
+    }
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .header-right {
+      align-self: stretch;
+      justify-content: flex-end;
+    }
+    .split { flex-direction: column; }
+  }
+
+  /* ============ MODO DÍA ============ */
+
+  body.day {
+    background: var(--day-bg);
+    color: var(--day-text-main);
+  }
+
+  body.day header {
+    background: linear-gradient(120deg, rgba(37,99,235,0.10), rgba(255,255,255,0.7));
+    border: 1px solid rgba(148,163,184,0.6);
+    color: var(--day-text-main);
+  }
+
+  body.day .header-left span {
+    color: var(--day-text-soft);
+  }
+
+  body.day .card {
+    background: var(--day-card);
+    border: 1px solid rgba(148,163,184,0.5);
+    box-shadow: 0 16px 32px rgba(15,23,42,0.18);
+  }
+
+  body.day .card::before { background: none; }
+
+  body.day .card-title {
+    color: var(--day-title);
+  }
+
+  body.day .card-subtitle,
+  body.day .summary-list,
+  body.day .mini-label,
+  body.day .bar-legend {
+    color: var(--day-text-soft);
+  }
+
+  body.day .summary-list span {
+    color: var(--day-text-main);
+  }
+
+  body.day .bar-visual {
+    background: linear-gradient(to top, #e5edf7, #f9fbff);
+    border: 1px solid rgba(148,163,184,0.7);
+  }
+
+  body.day .bar-fill {
+    background: linear-gradient(to top, #22c1c3, #3a8ef6);
+  }
+
+  body.day .pill {
+    background: var(--day-card-soft);
+    color: var(--day-text-main);
+    border: 1px solid rgba(148,163,184,0.7);
+  }
+
+  body.day .pill-dot {
+    background: var(--day-accent);
+  }
+
+  body.day .mode-badge {
+    background: var(--day-accent-soft);
+    color: var(--day-accent);
+  }
+
+  body.day .mode-dot {
+    background: var(--day-accent);
+  }
+
+  body.day .level-bar {
+    background: #e5edf7;
+  }
+
+  body.day .level-fill {
+    background: linear-gradient(to right, #3b82f6, #22c55e);
+  }
+
+  body.day #air-chart {
+    background: radial-gradient(circle at top, rgba(37,99,235,0.08), transparent 70%);
+    border: 1px solid rgba(148,163,184,0.7);
+  }
+
+  body.day .time-main {
+    color: var(--day-text-main);
+    font-weight: 600;
+  }
+
+  body.day .time-date {
+    color: var(--day-text-main);
+  }
+</style>
+</head>
+<body class="day">
+<div class="dashboard">
+  <header>
+    <div class="header-left">
+      <h1>Estación Ambiental ESP32</h1>
+      <span class="header-status" id="header-status">Recolectando datos en tiempo real...</span>
+    </div>
+    <div class="header-right">
+      <button id="system-btn" class="system-btn" onclick="toggleSystem()">Detener sistema</button>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- TEMPERATURA / HUMEDAD -->
+    <section class="card">
+      <div class="card-content">
+        <div class="card-title">Condiciones ambientales</div>
+        <div class="card-subtitle">Temperatura y humedad interior</div>
+
+        <div class="split">
+          <div class="bar-group">
+            <div class="bar">
+              <div class="mini-label">Temperatura</div>
+              <div class="bar-visual">
+                <div class="bar-fill" id="bar-temp"></div>
+              </div>
+              <div class="bar-legend">
+                <span id="temp-value">-- °C</span>
+                <span>0 - 50 °C</span>
+              </div>
+            </div>
+            <div class="bar">
+              <div class="mini-label">Humedad</div>
+              <div class="bar-visual">
+                <div class="bar-fill" id="bar-hum"></div>
+              </div>
+              <div class="bar-legend">
+                <span id="hum-value">-- %</span>
+                <span>0 - 100%</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mini-label">Resumen</div>
+            <ul class="summary-list">
+              <li>Temperatura actual: <span id="temp-summary">-- °C</span></li>
+              <li>Humedad actual: <span id="hum-summary">-- %</span></li>
+              <li>Percepción: <span id="comfort-label">--</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CALIDAD DE AIRE -->
+    <section class="card">
+      <div class="card-content">
+        <div class="card-title">Calidad del aire</div>
+        <div class="card-subtitle">Sensor MQ-135 (PPM aproximados)</div>
+
+        <div class="split" style="margin-bottom: 10px;">
+          <div>
+            <div class="mini-label">Concentración actual</div>
+            <div style="display:flex; align-items: baseline; gap:4px; margin-bottom:8px;">
+              <div class="metric-main" id="mqppm-value">--</div>
+              <div class="metric-unit">ppm</div>
+            </div>
+            <div class="pill" id="air-pill">
+              <div class="pill-dot"></div>
+              <span id="mq-state">--</span>
+            </div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <canvas id="air-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="mini-label">Rangos de referencia</div>
+        <div style="font-size:0.8rem;">
+          Hasta 350 ppm: Alta · 350–500: Buena · 500–800: Moderada · 800–1200: Baja · &gt;1200: Mala
+        </div>
+      </div>
+    </section>
+
+    <!-- LUZ -->
+    <section class="card">
+      <div class="card-content">
+        <div class="card-title">Iluminación ambiente</div>
+        <div class="card-subtitle">Sensor de luz HW-486</div>
+
+        <div>
+          <div class="mini-label">Modo</div>
+          <div class="mode-badge" id="mode-badge">
+            <div class="mode-dot"></div>
+            <span id="mode-text">--</span>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="mini-label">Nivel de luz</div>
+            <div class="level-bar">
+              <div class="level-fill" id="light-level"></div>
+            </div>
+            <div class="bar-legend" style="margin-top:8px;">
+              <span id="light-volt">-- V</span>
+              <span id="light-raw">ADC --</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FECHA / HORA -->
+    <section class="card">
+      <div class="card-content">
+        <div class="card-title">Fecha y hora</div>
+        <div class="card-subtitle">RTC DS1307</div>
+        <div class="time-main" id="time-main">--:--:--</div>
+        <div class="time-date" id="time-date">--/--/----</div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  // ====== VARIABLES GLOBALES JS ======
+  const ppmHistory = [];
+  const maxPoints = 50;
+  let systemPaused = false;
+  let fetchTimer = null;
+  const ctx = document.getElementById('air-chart').getContext('2d');
+
+  // ====== GRÁFICA DE PPM ======
+  function drawPpmChart() {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (ppmHistory.length < 2) return;
+
+    const maxPpm = 1600;
+    const minPpm = 0;
+    const dx = w / (maxPoints - 1);
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#00d1ff";
+    ctx.lineWidth = 2;
+
+    ppmHistory.forEach((v, i) => {
+      const x = i * dx;
+      const norm = Math.min(Math.max((v - minPpm) / (maxPpm - minPpm), 0), 1);
+      const y = h - norm * h;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.75);
+    ctx.lineTo(w, h * 0.75);
+    ctx.stroke();
+  }
+
+  // ====== CLASIFICAR CONFORT T/H ======
+  function classifyComfort(temp, hum) {
+    if (temp >= 20 && temp <= 26 && hum >= 40 && hum <= 60) return "Confortable";
+    if (temp < 18)  return "Frío";
+    if (temp > 28)  return "Caluroso";
+    if (hum < 30)   return "Aire seco";
+    if (hum > 70)   return "Aire muy húmedo";
+    return "Aceptable";
+  }
+
+  // ====== ACTUALIZAR DASHBOARD ======
+  function updateDashboard(data) {
+    const statusEl = document.getElementById('header-status');
+    if (!systemPaused) {
+      statusEl.textContent = "Última actualización hace menos de 1 segundo";
+    }
+
+    // --- Temperatura / Humedad ---
+    document.getElementById('temp-value').textContent = data.temp.toFixed(1) + " °C";
+    document.getElementById('hum-value').textContent  = data.hum.toFixed(1)  + " %";
+    document.getElementById('temp-summary').textContent = data.temp.toFixed(1) + " °C";
+    document.getElementById('hum-summary').textContent  = data.hum.toFixed(1)  + " %";
+    document.getElementById('comfort-label').textContent =
+      classifyComfort(data.temp, data.hum);
+
+    const tempPct = Math.max(0, Math.min(100, (data.temp / 50) * 100));
+    const humPct  = Math.max(0, Math.min(100, data.hum));
+    document.getElementById('bar-temp').style.height = tempPct + "%";
+    document.getElementById('bar-hum').style.height  = humPct  + "%";
+
+    // --- MQ135 (PPM + estado) ---
+    const ppm = data.mqPPM;
+    document.getElementById('mqppm-value').textContent = ppm.toFixed(0);
+    document.getElementById('mq-state').textContent    = data.mqState;
+
+    const pill = document.getElementById('air-pill');
+    pill.classList.remove("good","moderate","bad");
+    if (data.mqState === "Alta" || data.mqState === "Buena")      pill.classList.add("good");
+    else if (data.mqState === "Moderada")                         pill.classList.add("moderate");
+    else if (data.mqState === "Baja" || data.mqState === "Mala")  pill.classList.add("bad");
+
+    ppmHistory.push(ppm);
+    if (ppmHistory.length > maxPoints) ppmHistory.shift();
+    drawPpmChart();
+
+
+// --- Luz + modo Día/Noche ---
+    document.getElementById('light-volt').textContent = data.lightVolt.toFixed(3) + " V";
+    document.getElementById('light-raw').textContent  = "ADC " + data.lightRaw;
+
+    // Barra: en tu sensor, más voltaje = menos luz.
+    // Queremos que la barra represente "cantidad de luz",
+    // así que invertimos el voltaje.
+    let norm = 1 - (data.lightVolt / 3.3);  // 0–3.3 V en el ESP32
+
+    if (norm > 1)   norm = 1;
+    if (norm < 0.05) norm = 0.05;
+
+    document.getElementById('light-level').style.transform =
+      "scaleX(" + norm + ")";
+
+    // Modo Día/Noche (igual que en tu código original)
+    document.getElementById('mode-text').textContent = data.mode;
+
+    if (data.isNight) {
+      document.body.classList.add("night");
+      document.body.classList.remove("day");
+    } else {
+      document.body.classList.add("day");
+      document.body.classList.remove("night");
+    }
+
+
+    // --- Fecha y hora ---
+    const dt = data.datetime;
+    const parts = dt.split(" ");
+    if (parts.length === 2) {
+      document.getElementById('time-date').textContent = parts[0];
+      document.getElementById('time-main').textContent = parts[1];
+    } else {
+      document.getElementById('time-main').textContent = dt;
+    }
+  }
+
+  // ====== PETICIÓN AL ESP32 ======
+  function fetchData() {
+    if (systemPaused) return;
+    fetch('/sensor')
+      .then(r => r.json())
+      .then(updateDashboard)
+      .catch(err => console.error("Error al leer /sensor:", err));
+  }
+
+  // ====== BOTÓN DETENER/REANUDAR ======
+  function toggleSystem() {
+    systemPaused = !systemPaused;
+    const btn = document.getElementById('system-btn');
+    const statusEl = document.getElementById('header-status');
+
+    if (systemPaused) {
+      fetch('/pause');
+      btn.textContent = "Reanudar sistema";
+      btn.classList.add("paused");
+      statusEl.textContent = "Sistema detenido por el usuario";
+      document.body.classList.add('paused');
+    } else {
+      fetch('/resume');
+      btn.textContent = "Detener sistema";
+      btn.classList.remove("paused");
+      statusEl.textContent = "Reanudando lecturas...";
+      document.body.classList.remove('paused');
+      fetchData();
+    }
+  }
+
+  // ====== INICIO AUTOMÁTICO ======
+  fetchTimer = setInterval(fetchData, 1000);
+  fetchData();
+</script>
+</body>
+</html>
+)====";
+
+// ===================== FUNCIONES AUXILIARES =========================
+
+// Devuelve la fecha y hora actual del RTC en una cadena
+String getDateTimeString() {
+  if (!rtc.isrunning()) {
+    return "RTC no ajustado";
+  }
+  DateTime now = rtc.now();
+  char buf[25];
+  snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d:%02d",
+           now.day(), now.month(), now.year(),
+           now.hour(), now.minute(), now.second());
+  return String(buf);
+}
+
+//Realiza la lectura de todos los sensores y actualiza la estructura lastData
+void readSensors() {
+  // DHT
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  if (isnan(t) || isnan(h)) {
+    t = lastData.temp;
+    h = lastData.hum;
+  }
+
+  // MQ-135
+  int rawMQ = analogRead(MQ135_PIN);
+  float ppm = map(rawMQ, 0, 4095, (int)MQ_PPM_MIN, (int)MQ_PPM_MAX);
+  String mqState = classifyAirQuality(ppm);
+
+  // Luz
+  int rawL = analogRead(LDR_PIN);
+  float vL = (rawL * 3.3f) / 4095.0f;
+  bool isNight = vL > 1.6;           // umbral aproximado
+  String mode = isNight ? "Noche" : "Dia";
+
+  // Fecha/hora
+  String dt = getDateTimeString();
+
+  // Actualización de la estructura con las últimas mediciones
+  lastData.temp      = t;
+  lastData.hum       = h;
+  lastData.mqPPM     = ppm;
+  lastData.mqState   = mqState;
+  lastData.lightRaw  = rawL;
+  lastData.lightVolt = vL;
+  lastData.lightMode = mode;
+  lastData.isNight   = isNight;
+  lastData.datetime  = dt;
+}
+
+// Actualiza el contenido mostrado en la pantalla OLED con los últimos datos
+void updateOLED() {
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_6x12_tf);
+
+  // Línea 1: Temp y Humedad
+  String l1 = "T:" + String(lastData.temp, 1) + "C  H:" + String(lastData.hum, 0) + "%";
+  oled.drawStr(0, 12, l1.c_str());
+
+  // Línea 2: Cal + PPM (abreviado)
+  String l2 = "Cal:" + lastData.mqState + " PPM:" + String((int)lastData.mqPPM);
+  oled.drawStr(0, 26, l2.c_str());
+
+  // Línea 3: Modo Día/Noche
+  String l3 = "Modo:" + lastData.lightMode;
+  oled.drawStr(0, 40, l3.c_str());
+
+  // Línea 4: Fecha y hora
+  oled.drawStr(0, 54, lastData.datetime.c_str());
+
+  // Línea 5: Estado del sistema
+  oled.setFont(u8g2_font_6x10_tf);
+  if (systemPaused) {
+    oled.drawStr(0, 64, "Sistema Detenido");
+  } else {
+    oled.drawStr(0, 64, "Sistema Activo");
+  }
+
+  oled.sendBuffer();
+}
+
+// ===================== HANDLERS HTTP ================================
+
+void handleRoot() {
+  server.send_P(200, "text/html", MAIN_page);
+}
+
+// Respuesta JSON con las últimas lecturas de todos los sensores
+void handleSensorJson() {
+  String json = "{";
+  json += "\"temp\":"      + String(lastData.temp, 2)      + ",";
+  json += "\"hum\":"       + String(lastData.hum, 2)       + ",";
+  json += "\"mqPPM\":"     + String(lastData.mqPPM, 0)     + ",";
+  json += "\"mqState\":\"" + lastData.mqState              + "\",";
+  json += "\"lightRaw\":"  + String(lastData.lightRaw)     + ",";
+  json += "\"lightVolt\":" + String(lastData.lightVolt, 3) + ",";
+  json += "\"mode\":\""    + lastData.lightMode            + "\",";
+  json += "\"isNight\":"   + String(lastData.isNight ? "true" : "false") + ",";
+  json += "\"datetime\":\""+ lastData.datetime + "\"";
+  json += "}";
+  server.send(200, "application/json", json);
+}
+ 
+// Handler que marca el sistema como pausado 
+void handlePause() {
+  systemPaused = true;
+  server.send(200, "text/plain", "paused");
+}
+
+// Handler que reanuda el sistema
+void handleResume() {
+  systemPaused = false;
+  server.send(200, "text/plain", "resumed");
+}
+
+// ===================== SETUP / LOOP ================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  dht.begin();   // Inicialización del sensor DHT11
+  Wire.begin();  // Inicio de bus I2C para RTC y posibles periféricos I2C
+
+if (!rtc.begin()) {
+  Serial.println("No se encuentra el RTC");
+} else {
+  Serial.println("RTC encontrado, ajustando a fecha/hora de compilación...");
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));    // Ajuste inicial del RTC
+}
+
+ // Inicialización de la pantalla OLED
+  oled.begin();
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_6x12_tf);
+  oled.drawStr(0, 16, "Iniciando sistema...");
+  oled.sendBuffer();
+
+ // Conexión a la red WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando a WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("Conectado. IP: ");
+  Serial.println(WiFi.localIP());
+
+// Registro de rutas HTTP para la interfaz web
+  server.on("/",       HTTP_GET, handleRoot);
+  server.on("/sensor", HTTP_GET, handleSensorJson);
+  server.on("/pause",  HTTP_GET, handlePause);
+  server.on("/resume", HTTP_GET, handleResume);
+  server.begin();
+
+ // Primera lectura de sensores y primera actualización de la pantalla
+  readSensors();
+  updateOLED();
+}
+
+void loop() {
+  server.handleClient();
+
+  unsigned long now = millis();
+
+  // Sensores solo si el sistema NO está pausado
+  if (!systemPaused && now - lastSensorMillis >= SENSOR_INTERVAL_MS) {
+    lastSensorMillis = now;
+    readSensors();
+  }
+
+  // OLED siempre se actualiza 
+  if (now - lastOledMillis >= OLED_INTERVAL_MS) {
+    lastOledMillis = now;
+    updateOLED();
+  }
+}

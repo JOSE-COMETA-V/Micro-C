@@ -1,0 +1,142 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <DHT.h>
+#include <Wire.h>
+#include <RTClib.h>
+#include <Adafruit_SSD1306.h>
+
+// ---------------------- Configuración -------------------------
+#define DHTPIN 27
+#define DHTTYPE DHT11
+#define MQ135_PIN 34
+#define LDR_PIN 35
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+const unsigned long SENSOR_INTERVAL_MS = 3000;
+const unsigned long OLED_INTERVAL_MS   = 2000;
+
+// ---------------------- Objetos globales -----------------------
+DHT dht(DHTPIN, DHTTYPE);
+RTC_DS1307 rtc;
+Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+WebServer server(80);
+
+bool systemPaused = false;
+
+unsigned long lastSensorMillis = 0;
+unsigned long lastOledMillis   = 0;
+
+// Estructura para almacenar datos
+struct SensorData {
+  float temp;
+  float hum;
+  int air;
+  int light;
+  String dateTime;
+} data;
+
+// ---------------------- Lectura de sensores --------------------
+void readSensors() {
+  data.temp = dht.readTemperature();
+  data.hum  = dht.readHumidity();
+  data.air  = analogRead(MQ135_PIN);
+  data.light = analogRead(LDR_PIN);
+
+  DateTime now = rtc.now();
+  data.dateTime = String(now.day()) + "/" +
+                  String(now.month()) + "/" +
+                  String(now.year()) + " " +
+                  String(now.hour()) + ":" +
+                  String(now.minute());
+}
+
+// ---------------------- Actualización OLED ----------------------
+void updateOLED() {
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setTextColor(WHITE);
+
+  oled.setCursor(0,0);
+  oled.println("Estacion Ambiental");
+
+  oled.setCursor(0,12);
+  oled.print("T: "); oled.print(data.temp); oled.println(" C");
+
+  oled.setCursor(0,22);
+  oled.print("H: "); oled.print(data.hum); oled.println(" %");
+
+  oled.setCursor(0,32);
+  oled.print("Air: "); oled.println(data.air);
+
+  oled.setCursor(0,42);
+  oled.print("Luz: "); oled.println(data.light);
+
+  oled.setCursor(0,52);
+  oled.print(data.dateTime);
+
+  oled.display();
+}
+
+// ---------------------- Servidor Web ---------------------------
+void handleRoot() {
+  String html = 
+  "<html><body>"
+  "<h2>Estacion Ambiental ESP32</h2>"
+  "<p>Temp: " + String(data.temp) + " C</p>"
+  "<p>Hum: " + String(data.hum) + " %</p>"
+  "<p>Aire: " + String(data.air) + "</p>"
+  "<p>Luz: " + String(data.light) + "</p>"
+  "<p>Fecha/Hora: " + data.dateTime + "</p>"
+  "</body></html>";
+
+  server.send(200, "text/html", html);
+}
+
+void handlePause() {
+  systemPaused = !systemPaused;
+  server.send(200, "text/plain", systemPaused ? "PAUSADO" : "ACTIVO");
+}
+
+void setupServer() {
+  server.on("/", handleRoot);
+  server.on("/pause", handlePause);
+  server.begin();
+}
+
+// ---------------------- Setup ---------------------------
+void setup() {
+  Serial.begin(115200);
+
+  dht.begin();
+  Wire.begin();
+  rtc.begin();
+
+  oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  oled.clearDisplay();
+  oled.display();
+
+  WiFi.begin("TuSSID", "TuPassword");
+  while (WiFi.status() != WL_CONNECTED) delay(200);
+
+  setupServer();
+  readSensors();
+  updateOLED();
+}
+
+// ---------------------- Loop optimizado ------------------------
+void loop() {
+  server.handleClient();
+  unsigned long now = millis();
+
+  if (!systemPaused && now - lastSensorMillis >= SENSOR_INTERVAL_MS) {
+    lastSensorMillis = now;
+    readSensors();
+  }
+
+  if (now - lastOledMillis >= OLED_INTERVAL_MS) {
+    lastOledMillis = now;
+    updateOLED();
+  }
+}

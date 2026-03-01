@@ -1,0 +1,46 @@
+    PROCESSOR 18F4550
+    #include <xc.inc>
+
+    PSECT   udata_acs           ; Sección de variables en RAM accesible
+R0:     ds 1
+R1:     ds 1
+R2:     ds 1
+
+    PSECT   resetVect, class=CODE, reloc=2
+    ORG     0x00
+    goto    main
+
+    PSECT   code, class=CODE, reloc=2
+main:
+    clrf    PORTB
+    bcf     TRISB, 0   ; RB0 salida
+
+parpadeo:
+    bsf     LATB, 0    ; LED ON
+    call    delay1s
+    bcf     LATB, 0    ; LED OFF
+    call    delay1s
+    goto    parpadeo
+
+;-----------------------------------------
+; Retardo aproximado 1s @ 4 MHz
+;-----------------------------------------
+delay1s:
+    movlw   16
+    movwf   R2
+dly_outer:
+    movlw   0xFF
+    movwf   R1
+dly_mid:
+    movlw   0xFF
+    movwf   R0
+dly_inner:
+    decfsz  R0, f
+    bra     dly_inner
+    decfsz  R1, f
+    bra     dly_mid
+    decfsz  R2, f
+    bra     dly_outer
+    return
+
+    END
